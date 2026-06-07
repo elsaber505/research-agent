@@ -1,0 +1,81 @@
+import json
+
+import litellm
+
+from config import FAST_MODEL
+from agents.decomposer.decomposer import SubQuery
+from agents.discovery.semantic_scholar import SemanticScholarPaper
+
+SYSTEM_PROMPT = """\
+You are a research paper filter. You will be given a sub-query and a list of papers retrieved \
+from Semantic Scholar. Select only the papers whose abstracts directly address the sub-query. \
+Discard papers that are off-topic or only tangentially related.
+"""
+
+_SELECT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "select_papers",
+        "description": "Submit the IDs of papers that are relevant to the sub-query.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "paper_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Semantic Scholar paper IDs of the relevant papers",
+                }
+            },
+            "required": ["paper_ids"],
+        },
+    },
+}
+
+
+def _format_papers(papers: list[SemanticScholarPaper]) -> str:
+    parts = []
+    for p in papers:
+        authors = ", ".join(p.authors[:3])
+        if len(p.authors) > 3:
+            authors += " et al."
+        abstract = p.abstract[:500] + ("..." if len(p.abstract) > 500 else "")
+        parts.append(
+            f"ID: {p.paper_id}\n"
+            f"Title: {p.title}\n"
+            f"Authors: {authors}\n"
+            f"Year: {p.year}\n"
+            f"Abstract: {abstract}"
+        )
+    return "\n\n".join(parts)
+
+
+async def filter_papers(
+    sub_query: SubQuery,
+    papers: list[SemanticScholarPaper],
+) -> list[SemanticScholarPaper]:
+    if not papers:
+        return []
+
+    paper_index = {p.paper_id: p for p in papers}
+
+    response = await litellm.acompletion(
+        model=FAST_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Sub-query: {sub_query.query}\n"
+                    f"Rationale: {sub_query.rationale}\n\n"
+                    f"Papers:\n\n{_format_papers(papers)}"
+                ),
+            },
+        ],
+        tools=[_SELECT_TOOL],
+        tool_choice={"type": "function", "function": {"name": "select_papers"}},
+    )
+
+    tool_call = response.choices[0].message.tool_calls[0]
+    args = json.loads(tool_call.function.arguments)
+
+    return [paper_index[pid] for pid in args.get("paper_ids", []) if pid in paper_index]

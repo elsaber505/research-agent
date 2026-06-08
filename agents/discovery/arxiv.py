@@ -1,5 +1,5 @@
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from agents.discovery.paper import Paper
 
 import httpx
 
@@ -26,17 +26,7 @@ SEARCH_ARXIV_TOOL = {
 }
 
 
-@dataclass
-class ArxivPaper:
-    arxiv_id: str
-    title: str
-    authors: list[str]
-    abstract: str
-    published: str  # YYYY-MM-DD
-    pdf_url: str = ""
-
-
-async def search_arxiv(query: str, max_results: int = 10) -> list[ArxivPaper]:
+async def search_arxiv(query: str, max_results: int = 10) -> list[Paper]:
     params = {
         "search_query": f"all:{query}",
         "start": 0,
@@ -45,8 +35,6 @@ async def search_arxiv(query: str, max_results: int = 10) -> list[ArxivPaper]:
     headers = {"User-Agent": "research-helper/0.1.0"}
     async with httpx.AsyncClient(headers=headers) as client:
         response = await client.get(_ARXIV_API, params=params, timeout=15.0)
-        # debug
-        print(response.url)
         response.raise_for_status()
 
     root = ET.fromstring(response.text)
@@ -72,8 +60,8 @@ async def search_arxiv(query: str, max_results: int = 10) -> list[ArxivPaper]:
                 break
 
         papers.append(
-            ArxivPaper(
-                arxiv_id=arxiv_id,
+            Paper(
+                paper_id=arxiv_id,
                 title=title,
                 authors=authors,
                 abstract=abstract,

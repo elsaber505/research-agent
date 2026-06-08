@@ -4,11 +4,11 @@ import litellm
 
 from config import FAST_MODEL
 from agents.decomposer.decomposer import SubQuery
-from agents.discovery.semantic_scholar import SemanticScholarPaper
+from agents.discovery.paper import Paper
 
 SYSTEM_PROMPT = """\
-You are a research paper filter. You will be given a sub-query and a list of papers retrieved \
-from Semantic Scholar. Select only the papers whose abstracts directly address the sub-query. \
+You are a research paper filter. You will be given a query and a list of papers retrieved \
+from Semantic Scholar. Select only the papers whose abstracts directly address the query. \
 Discard papers that are off-topic or only tangentially related.
 """
 
@@ -23,7 +23,7 @@ _SELECT_TOOL = {
                 "paper_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Semantic Scholar paper IDs of the relevant papers",
+                    "description": "Paper IDs of the relevant papers",
                 }
             },
             "required": ["paper_ids"],
@@ -32,18 +32,14 @@ _SELECT_TOOL = {
 }
 
 
-def _format_papers(papers: list[SemanticScholarPaper]) -> str:
+def _format_papers(papers: list[Paper]) -> str:
     parts = []
     for p in papers:
-        authors = ", ".join(p.authors[:3])
-        if len(p.authors) > 3:
-            authors += " et al."
         abstract = p.abstract[:500] + ("..." if len(p.abstract) > 500 else "")
         parts.append(
             f"ID: {p.paper_id}\n"
             f"Title: {p.title}\n"
-            f"Authors: {authors}\n"
-            f"Year: {p.year}\n"
+            f"Published: {p.published}\n"
             f"Abstract: {abstract}"
         )
     return "\n\n".join(parts)
@@ -51,8 +47,8 @@ def _format_papers(papers: list[SemanticScholarPaper]) -> str:
 
 async def filter_papers(
     sub_query: SubQuery,
-    papers: list[SemanticScholarPaper],
-) -> list[SemanticScholarPaper]:
+    papers: list[Paper],
+) -> list[Paper]:
     if not papers:
         return []
 

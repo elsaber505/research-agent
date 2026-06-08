@@ -5,10 +5,10 @@ import litellm
 from config import FAST_MODEL
 from agents.decomposer.decomposer import SubQuery
 from agents.discovery.semantic_scholar import (
-    SemanticScholarPaper,
     search_semantic_scholar,
     SEARCH_SEMANTIC_SCHOLAR_TOOL,
 )
+from agents.discovery.paper import Paper
 
 SYSTEM_PROMPT = """\
 You are a research paper discovery agent. Given a search sub-query, your job is to collect \
@@ -29,8 +29,8 @@ _TOOLS = [SEARCH_SEMANTIC_SCHOLAR_TOOL, _FINISH_TOOL]
 _MAX_TURNS = 6
 
 
-async def discover(sub_query: SubQuery) -> list[SemanticScholarPaper]:
-    paper_index: dict[str, SemanticScholarPaper] = {}
+async def discover(sub_query: SubQuery) -> list[Paper]:
+    paper_index: dict[str, Paper] = {}  # keys are paper ids
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},

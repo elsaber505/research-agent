@@ -1,11 +1,11 @@
 import asyncio
-from dataclasses import dataclass
 from random import random
+from agents.discovery.paper import Paper
 
 import httpx
 
 _SS_API = "https://api.semanticscholar.org/graph/v1/paper/search"
-_FIELDS = "title,authors,year,abstract,externalIds,openAccessPdf,publicationDate"
+_FIELDS = "title,authors,year,publicationDate,abstract,openAccessPdf"
 
 _MAX_ATTEMPTS = 20
 
@@ -29,23 +29,9 @@ SEARCH_SEMANTIC_SCHOLAR_TOOL = {
     },
 }
 
-
-@dataclass
-class SemanticScholarPaper:
-    paper_id: str
-    title: str
-    authors: list[str]
-    abstract: str
-    year: int | None
-    published: str  # YYYY-MM-DD, empty string if unknown
-    arxiv_id: str   # empty string if not on arXiv
-    doi: str        # empty string if unavailable
-    pdf_url: str
-
-
 async def search_semantic_scholar(
     query: str, max_results: int = 10
-) -> list[SemanticScholarPaper]:
+) -> list[Paper]:
     params = {
         "query": query,
         "fields": _FIELDS,
@@ -63,21 +49,26 @@ async def search_semantic_scholar(
 
     papers = []
     for item in response.json().get("data", []):
-        oa = item.get("openAccessPdf") or {}
-        external_ids = item.get("externalIds") or {}
-        authors = [a["name"] for a in (item.get("authors") or [])]
+        if not item.get("openAccessPdf"):
+            continue
+
+        authors = [a["name"] for a in item.get("authors", [])]
+        published = item.get("publicationDate")
+        if not published:
+            year = item.get("year")
+            if year:
+                published = str(year)
+            else:
+                published = ""
 
         papers.append(
-            SemanticScholarPaper(
+            Paper(
                 paper_id=item.get("paperId", ""),
                 title=item.get("title", ""),
                 authors=authors,
-                abstract=item.get("abstract") or "",
-                year=item.get("year"),
-                published=item.get("publicationDate") or "",
-                arxiv_id=external_ids.get("ArXiv") or "",
-                doi=external_ids.get("DOI") or "",
-                pdf_url=oa.get("url", ""),
+                abstract=item.get("abstract", ""),
+                published=published,
+                pdf_url=item.get("openAccessPdf").get("url", ""),
             )
         )
 

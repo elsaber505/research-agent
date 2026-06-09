@@ -49,7 +49,14 @@ async def search_semantic_scholar(
 
     papers = []
     for item in response.json().get("data", []):
-        if not item.get("openAccessPdf"):
+        # need title, abstract, and PDF to proceed
+        if not (title := item.get("title")):
+            continue
+        if not (abstract := item.get("abstract")):
+            continue
+        if not (oa := item.get("openAccessPdf")):
+            continue
+        if not (pdf_url := oa.get("url")):
             continue
 
         authors = [a["name"] for a in item.get("authors", [])]
@@ -59,16 +66,16 @@ async def search_semantic_scholar(
             if year:
                 published = str(year)
             else:
-                published = ""
+                published = "unknown"
 
         papers.append(
             Paper(
-                paper_id=item.get("paperId", ""),
-                title=item.get("title", ""),
+                paper_id=item.get("paperId") or "",
+                title=title,
                 authors=authors,
-                abstract=item.get("abstract", ""),
+                abstract=abstract,
                 published=published,
-                pdf_url=item.get("openAccessPdf").get("url", ""),
+                pdf_url=pdf_url
             )
         )
 

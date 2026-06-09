@@ -818,11 +818,15 @@ name = "research-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "litellm" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "litellm", specifier = ">=1.87.0" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "litellm", specifier = ">=1.87.0" },
+]
 
 [[package]]
 name = "rich"

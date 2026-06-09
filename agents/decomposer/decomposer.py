@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import litellm
 
-from config import MODEL
+from config import STRONG_MODEL
 
 SYSTEM_PROMPT = """\
 You are a research query decomposer. Given a user's research question, break it into \
@@ -65,7 +65,7 @@ class SubQuery:
 
 async def decompose(query: str) -> list[SubQuery]:
     response = await litellm.acompletion(
-        model=MODEL,
+        model=STRONG_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": query},

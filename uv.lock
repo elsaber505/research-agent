@@ -834,6 +834,7 @@ name = "research-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "httpx" },
     { name = "litellm" },
     { name = "pymupdf" },
@@ -841,6 +842,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2026.5.20" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = ">=1.87.0" },
     { name = "pymupdf", specifier = ">=1.27.2.3" },

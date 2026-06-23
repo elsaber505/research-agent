@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import litellm
 
-from config import STRONG_MODEL
+from config import FAST_MODEL, FAST_API_BASE
 
 SYSTEM_PROMPT = """\
 You are a research query decomposer. Given a user's research question, break it into \
@@ -14,6 +14,35 @@ Rules:
 - Each sub-query covers a non-overlapping aspect of the overall question
 - Use terminology found in academic paper titles and abstracts
 - Priority 1 = most central to the question, 3 = supplementary context
+
+You MUST always call the submit_sub_queries function with your response.
+Example of the required format:
+{
+    "sub_queries": [
+        {
+            "query": "transformer attention mechanism self-supervised learning",
+            "rationale": "Covers the core architectural innovation being researched.",
+            "priority": 1
+        },
+        {
+            "query": "BERT GPT language model pretraining NLP",
+            "rationale": "Covers major implementations of the architecture in practice.",
+            "priority": 1
+        },
+        {
+            "query": "vision transformer image classification ViT",
+            "rationale": "Covers application of transformers beyond NLP.",
+            "priority": 2
+        },
+        {
+            "query": "transformer architecture limitations alternatives survey",
+            "rationale": "Provides supplementary context on known weaknesses.",
+            "priority": 3
+        }
+    ]
+}
+Note the following: list of 3-5 subqueries; `query`, `rationale`, and `priority` \
+fields are REQUIRED for each subquery
 """
 
 _TOOL = {
@@ -65,17 +94,27 @@ class SubQuery:
 
 async def decompose(query: str) -> list[SubQuery]:
     response = await litellm.acompletion(
-        model=STRONG_MODEL,
+        model=FAST_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": query},
         ],
         tools=[_TOOL],
         tool_choice={"type": "function", "function": {"name": "submit_sub_queries"}},
+        api_base="http://localhost:11434",
     )
 
-    tool_call = response.choices[0].message.tool_calls[0]
+    tool_calls = response.choices[0].message.tool_calls
+    if not tool_calls:
+        raise RuntimeError("Model did not return a tool call for submit_sub_queries")
+    tool_call = tool_calls[0]
     args = json.loads(tool_call.function.arguments)
+
+    sub_queries = args["sub_queries"]
+    print(sub_queries)
+    if isinstance(sub_queries, str):
+        print("debug")
+        sub_queries = json.loads(sub_queries)
 
     return [
         SubQuery(
@@ -83,5 +122,5 @@ async def decompose(query: str) -> list[SubQuery]:
             rationale=sq["rationale"],
             priority=sq["priority"],
         )
-        for sq in args["sub_queries"]
+        for sq in sub_queries
     ]

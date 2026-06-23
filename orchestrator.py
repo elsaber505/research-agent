@@ -48,7 +48,7 @@ async def run_pipeline(query: str) -> tuple[list[PaperSummary], str]:
     print("[Decomposer] Breaking query into sub-queries...", flush=True)
     sub_queries = await decompose(query)
     print(f"[Decomposer] Done — {len(sub_queries)} sub-queries:", flush=True)
-    for sq in sorted(sub_queries, key=lambda s: s.priority):
+    for sq in sorted(sub_queries, key=lambda s: int(s.priority)):
         print(f"  [{sq.priority}] {sq.query}", flush=True)
 
     # Stage 2: Paper discovery -- sequential to respect API rate limits
@@ -57,6 +57,9 @@ async def run_pipeline(query: str) -> tuple[list[PaperSummary], str]:
     for i, sq in enumerate(sub_queries, start=1):
         print(f"  ({i}/{len(sub_queries)}) {sq.query}", flush=True)
         raw_papers = await _discover_with_retry(sq, errors)
+        if not raw_papers:
+            print(f"    → No papers found", flush=True)
+            continue
         filtered = await filter_papers(sq, raw_papers) if raw_papers else []
         print(
             f"    → {len(raw_papers)} found, {len(filtered)} kept after filtering",
@@ -67,6 +70,10 @@ async def run_pipeline(query: str) -> tuple[list[PaperSummary], str]:
 
     all_papers = list(paper_index.values())
     print(f"[Discovery] Done — {len(all_papers)} unique papers total\n", flush=True)
+
+    # DEBUG: Get human confirmation before reading
+    # if input("Proceed with reading? [y/N]: ").strip().lower() != "y":
+    #     return [], "Execution was stopped after discovery"
 
     # Stage 3: Read papers in parallel
     print(f"[Reader] Reading {len(all_papers)} papers in parallel...", flush=True)

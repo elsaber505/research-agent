@@ -1,7 +1,9 @@
 import litellm
 
-from config import STRONG_MODEL
+from config import STRONG_MODEL, STRONG_API_BASE
 from agents.reader.paper_summary import PaperSummary
+
+_NUM_CTX = 65_536
 
 SYSTEM_PROMPT = """\
 You are a research synthesis writer. Given a set of paper summaries and a research query, \
@@ -15,7 +17,7 @@ Rules:
 - Cite papers inline as [N] where N is the paper number in the bibliography.
 - Be precise and concise.
 
-Report structure (use exactly these sections):
+Report structure (you must use exactly these sections):
 1. # Research Report: {query}
 2. ## Executive Summary  (3–5 sentences covering the main takeaways)
 3. ## [Theme 1 title]  (one section per major thematic cluster — you decide the themes)
@@ -66,7 +68,7 @@ async def write_report(
     if not summaries:
         return f"# Research Report: {query}\n\nNo relevant papers were found for this query."
 
-    summaries = sorted(summaries, key=lambda s: s.relevance_score, reverse=True)
+    summaries = sorted(summaries, key=lambda s: int(s.relevance_score), reverse=True)
 
     system_prompt = SYSTEM_PROMPT.replace("{query}", query)
 
@@ -82,6 +84,8 @@ async def write_report(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
+        api_base=STRONG_API_BASE,
+        num_ctx=_NUM_CTX,
     )
 
     return response.choices[0].message.content

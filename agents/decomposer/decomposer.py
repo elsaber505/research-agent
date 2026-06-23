@@ -15,7 +15,8 @@ Rules:
 - Use terminology found in academic paper titles and abstracts
 - Priority 1 = most central to the question, 3 = supplementary context
 
-You MUST always call the submit_sub_queries function with your response.
+You MUST always call the submit_sub_queries function with your response. For each sub-query \
+you provide, the `query`, `rationale`, and `priority` properties are REQUIRED.
 Example of the required format:
 {
     "sub_queries": [
@@ -41,8 +42,6 @@ Example of the required format:
         }
     ]
 }
-Note the following: list of 3-5 subqueries; `query`, `rationale`, and `priority` \
-fields are REQUIRED for each subquery
 """
 
 _TOOL = {
@@ -110,17 +109,26 @@ async def decompose(query: str) -> list[SubQuery]:
     tool_call = tool_calls[0]
     args = json.loads(tool_call.function.arguments)
 
-    sub_queries = args["sub_queries"]
-    print(sub_queries)
+    sub_queries = args.get("sub_queries")
+    if not sub_queries:
+        raise RuntimeError("Model did not return list of sub-queries")
     if isinstance(sub_queries, str):
         print("debug")
         sub_queries = json.loads(sub_queries)
 
-    return [
-        SubQuery(
-            query=sq["query"],
-            rationale=sq["rationale"],
-            priority=sq["priority"],
-        )
-        for sq in sub_queries
-    ]
+    parsed_sub_queries = []
+    for sq in sub_queries:
+        query = sq.get("query")
+        if not query:
+            continue
+        rationale = sq.get("rationale", "")
+        priority = int(sq.get("priority", 3))
+        parsed_sub_queries.append(SubQuery(
+            query=query,
+            rationale=rationale,
+            priority = priority,
+        ))
+    if not parsed_sub_queries:
+        raise RuntimeError("Model returned no valid sub-queries")
+
+    return parsed_sub_queries

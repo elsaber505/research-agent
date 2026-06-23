@@ -13,8 +13,8 @@ from agents.discovery.paper import Paper
 SYSTEM_PROMPT = """\
 You are a research paper discovery agent. Given a search query, your job is to collect \
 papers using the search API tools provided to you.
-After searching with the provided query, you may search multiple times with varied \
-queries and terminology to maximize coverage. When you have made enough searches, \
+After searching with the provided query, search multiple times with varied queries \
+and terminology to maximize coverage. When you have made enough searches, \
 call finish_search.
 """
 

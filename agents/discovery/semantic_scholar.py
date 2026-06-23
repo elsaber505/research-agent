@@ -44,7 +44,7 @@ async def search_semantic_scholar(
             response = await client.get(_SS_API, params=params, timeout=15.0)
             if response.status_code != 429:
                 break
-            await asyncio.sleep(2 + random())
+            await asyncio.sleep(1 + random())
         response.raise_for_status()
 
     papers = []

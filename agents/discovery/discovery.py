@@ -2,7 +2,7 @@ import json
 
 import litellm
 
-from config import FAST_MODEL
+from config import FAST_MODEL, FAST_API_BASE
 from agents.decomposer.decomposer import SubQuery
 from agents.discovery.semantic_scholar import (
     search_semantic_scholar,
@@ -11,9 +11,11 @@ from agents.discovery.semantic_scholar import (
 from agents.discovery.paper import Paper
 
 SYSTEM_PROMPT = """\
-You are a research paper discovery agent. Given a search sub-query, your job is to collect \
-papers from Semantic Scholar. Search multiple times with varied queries and terminology to \
-maximize coverage. When you have made enough searches, call finish_search.
+You are a research paper discovery agent. Given a search query, your job is to collect \
+papers using the search API tools provided to you.
+After searching with the provided query, search multiple times with varied queries \
+and terminology to maximize coverage. When you have made enough searches, \
+call finish_search.
 """
 
 _FINISH_TOOL = {
@@ -48,6 +50,7 @@ async def discover(sub_query: SubQuery) -> list[Paper]:
             model=FAST_MODEL,
             messages=messages,
             tools=_TOOLS,
+            api_base=FAST_API_BASE,
         )
 
         message = response.choices[0].message
@@ -85,7 +88,7 @@ async def discover(sub_query: SubQuery) -> list[Paper]:
             elif name == "search_semantic_scholar":
                 results = await search_semantic_scholar(
                     query=args["query"],
-                    max_results=args.get("max_results", 10),
+                    max_results=int(args.get("max_results", 10)),
                 )
                 for p in results:
                     paper_index[p.paper_id] = p

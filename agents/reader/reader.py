@@ -4,11 +4,12 @@ import pymupdf
 import httpx
 import litellm
 
-from config import STRONG_MODEL
+from config import STRONG_MODEL, STRONG_API_BASE
 from agents.discovery.paper import Paper
 from agents.reader.paper_summary import PaperSummary
 
 _MAX_CHARS = 80_000
+_NUM_CTX = 65_536  # Ollama default is 2048; override to handle full PDF text
 
 _TOOL = {
     "type": "function",
@@ -74,6 +75,34 @@ _TOOL = {
     },
 }
 
+_FORMAT_EXAMPLE = """\
+{
+    "doi": "10.48550/arXiv.1706.03762",
+    "core_claim": "The Transformer architecture, relying solely on attention mechanisms without recurrence or convolution, achieves superior translation quality while being more parallelizable and faster to train.",
+    "methodology": "The authors propose an encoder-decoder architecture using stacked self-attention and feed-forward layers. They evaluate on WMT 2014 English-to-German and English-to-French translation benchmarks using BLEU scores, training on 8 P100 GPUs for 3.5 days.",
+    "key_findings": [
+        "Transformer achieves 28.4 BLEU on EN-DE translation, outperforming all prior models including ensembles.",
+        "Achieves 41.0 BLEU on EN-FR, establishing a new single-model state of the art.",
+        "Training cost is significantly lower than recurrent or convolutional alternatives.",
+        "Multi-head attention allows the model to jointly attend to information from different representation subspaces."
+    ],
+    "limitations": [
+        "Evaluated only on translation tasks; generalization to other sequence tasks is not fully demonstrated.",
+        "Quadratic memory complexity with respect to sequence length limits applicability to very long sequences."
+    ],
+    "relevant_quotes": [
+        {
+            "text": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+            "page": "1"
+        },
+        {
+            "text": "The Transformer allows for significantly more parallelization and can reach a new state of the art in translation quality.",
+            "page": "2"
+        }
+    ],
+    "relevance_score": 5
+}\
+"""
 
 def _build_system_prompt(query: str) -> str:
     return f"""\
@@ -88,6 +117,9 @@ Rules:
 - For relevance_score: score 1 if the paper does not address the query even if otherwise interesting, \
 and 5 only if it directly and substantially answers the query.
 - For doi: extract from the paper text if present (usually on the first page); otherwise return "".
+
+You MUST call the submit_summary function with your response. Include all required fields: \
+DOI, core claim, methodology, key findings, limitations, relevant quotes, and relevance score.
 """
 
 
@@ -117,6 +149,19 @@ def _extract_text(pdf_bytes: bytes) -> str | None:
         return None
 
 
+def _parse_str_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed if item]
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return []
+
+
 async def read_paper(paper: Paper, query: str) -> PaperSummary:
     pdf_bytes = await _fetch_pdf(paper.pdf_url)
     text = _extract_text(pdf_bytes) if pdf_bytes is not None else None
@@ -132,6 +177,7 @@ async def read_paper(paper: Paper, query: str) -> PaperSummary:
         f"Title: {paper.title}\n"
         f"Published: {paper.published}\n\n"
         f"{'Full text' if used_full_text else 'Abstract (PDF unavailable)'}:\n\n{text}"
+        f"\n\nExample of the required submit_summary format:\n{_FORMAT_EXAMPLE}"
     )
 
     response = await litellm.acompletion(
@@ -142,14 +188,40 @@ async def read_paper(paper: Paper, query: str) -> PaperSummary:
         ],
         tools=[_TOOL],
         tool_choice={"type": "function", "function": {"name": "submit_summary"}},
+        api_base=STRONG_API_BASE,
+        num_ctx=_NUM_CTX,
     )
 
-    tool_call = response.choices[0].message.tool_calls[0]
+    tool_calls = response.choices[0].message.tool_calls
+    if not tool_calls:
+        raise RuntimeError(f"Model did not return a tool call for submit_summary on '{paper.title}'")
+    tool_call = tool_calls[0]
     args = json.loads(tool_call.function.arguments)
 
-    relevant_quotes = [
-        (q["text"], q["page"]) for q in args.get("relevant_quotes", [])
-    ]
+    key_findings = _parse_str_list(args.get("key_findings", []))
+    limitations = _parse_str_list(args.get("limitations", []))
+
+    raw_quotes = args.get("relevant_quotes", [])
+    if isinstance(raw_quotes, str):
+        try:
+            raw_quotes = json.loads(raw_quotes)
+        except (json.JSONDecodeError, ValueError):
+            raw_quotes = []
+    relevant_quotes = []
+    for q in raw_quotes:
+        if isinstance(q, str):
+            try:
+                q = json.loads(q)
+            except (json.JSONDecodeError, ValueError):
+                continue
+        if isinstance(q, dict) and "text" in q:
+            relevant_quotes.append((q["text"], q.get("page", "")))
+
+    raw_score = args.get("relevance_score", 1)
+    try:
+        relevance_score = max(1, min(5, int(raw_score)))
+    except (TypeError, ValueError):
+        relevance_score = 1
 
     return PaperSummary(
         paper_id=paper.paper_id,
@@ -157,11 +229,11 @@ async def read_paper(paper: Paper, query: str) -> PaperSummary:
         authors=paper.authors,
         published=paper.published,
         doi=args.get("doi", ""),
-        core_claim=args["core_claim"],
-        methodology=args["methodology"],
-        key_findings=args["key_findings"],
-        limitations=args["limitations"],
+        core_claim=args.get("core_claim", ""),
+        methodology=args.get("methodology", ""),
+        key_findings=key_findings,
+        limitations=limitations,
         relevant_quotes=relevant_quotes,
-        relevance_score=args["relevance_score"],
+        relevance_score=relevance_score,
         used_full_text=used_full_text,
     )

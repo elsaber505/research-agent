@@ -39,8 +39,7 @@ async def search_semantic_scholar(
         "openAccessPdf": "",
     }
     headers = {"User-Agent": "research-helper/0.1.0"}
-    # verify=False: api.semanticscholar.org has an expired intermediate cert (server-side issue)
-    async with httpx.AsyncClient(headers=headers, verify=False) as client:
+    async with httpx.AsyncClient(headers=headers) as client:
         for attempt in range(_MAX_ATTEMPTS):
             response = await client.get(_SS_API, params=params, timeout=15.0)
             if response.status_code != 429:

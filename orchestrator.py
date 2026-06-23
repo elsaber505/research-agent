@@ -4,6 +4,7 @@ from agents.decomposer import SubQuery, decompose
 from agents.discovery import Paper, discover, filter_papers
 from agents.reader import PaperSummary, read_paper
 from agents.writer import write_report
+from config import READER_BATCH_SIZE
 
 _MAX_RETRIES = 2
 
@@ -75,10 +76,21 @@ async def run_pipeline(query: str) -> tuple[list[PaperSummary], str]:
     # if input("Proceed with reading? [y/N]: ").strip().lower() != "y":
     #     return [], "Execution was stopped after discovery"
 
-    # Stage 3: Read papers in parallel
-    print(f"[Reader] Reading {len(all_papers)} papers in parallel...", flush=True)
-    read_tasks = [_read_with_retry(p, query, errors) for p in all_papers]
-    results = await asyncio.gather(*read_tasks)
+    # Stage 3: Read papers in batches
+    batch_size = READER_BATCH_SIZE or len(all_papers)
+    batches = [all_papers[i:i + batch_size] for i in range(0, len(all_papers), batch_size)]
+    print(
+        f"[Reader] Reading {len(all_papers)} papers"
+        f" ({len(batches)} batch(es) of up to {batch_size})...",
+        flush=True,
+    )
+    results: list[PaperSummary | None] = []
+    for i, batch in enumerate(batches, start=1):
+        print(f"  Batch {i}/{len(batches)} ({len(batch)} papers)...", flush=True)
+        batch_results = await asyncio.gather(
+            *[_read_with_retry(p, query, errors) for p in batch]
+        )
+        results.extend(batch_results)
     summaries = [s for s in results if s is not None]
     print(f"[Reader] Done — {len(summaries)}/{len(all_papers)} papers summarized\n", flush=True)
 

@@ -120,8 +120,6 @@ and 5 only if it directly and substantially answers the query.
 
 You MUST call the submit_summary function with your response. Include all required fields: \
 DOI, core claim, methodology, key findings, limitations, relevant quotes, and relevance score.
-Example of the required format:
-{_FORMAT_EXAMPLE}
 """
 
 
@@ -179,6 +177,7 @@ async def read_paper(paper: Paper, query: str) -> PaperSummary:
         f"Title: {paper.title}\n"
         f"Published: {paper.published}\n\n"
         f"{'Full text' if used_full_text else 'Abstract (PDF unavailable)'}:\n\n{text}"
+        f"\n\nExample of the required submit_summary format:\n{_FORMAT_EXAMPLE}"
     )
 
     response = await litellm.acompletion(

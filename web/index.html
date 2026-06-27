@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #111827;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    header { margin-bottom: 2rem; }
+
+    h1 { font-size: 1.75rem; font-weight: 700; }
+    h1 span { color: #4f46e5; }
+
+    .subtitle { color: #6b7280; margin-top: 0.25rem; font-size: 0.9rem; }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .query-form { display: flex; gap: 0.75rem; }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #4f46e5; }
+
+    button {
+      padding: 0.65rem 1.5rem;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+      white-space: nowrap;
+    }
+    button:hover { background: #4338ca; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse 1.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .status-dot.done { background: #9ca3af; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .log {
+      background: #0f1117;
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+      font-size: 0.8rem;
+      color: #a3e635;
+      max-height: 280px;
+      overflow-y: auto;
+      line-height: 1.7;
+    }
+
+    .error-msg {
+      color: #ef4444;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      margin-top: 0.75rem;
+    }
+
+    .report-body { line-height: 1.75; }
+    .report-body h1, .report-body h2, .report-body h3 {
+      margin: 1.25rem 0 0.5rem;
+      font-weight: 600;
+    }
+    .report-body h1 { font-size: 1.4rem; }
+    .report-body h2 {
+      font-size: 1.15rem;
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 0.3rem;
+    }
+    .report-body h3 { font-size: 1rem; }
+    .report-body p { margin: 0.6rem 0; color: #374151; }
+    .report-body ul, .report-body ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+    .report-body li { margin: 0.3rem 0; color: #374151; }
+    .report-body code {
+      background: #f3f4f6;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-family: 'SF Mono', monospace;
+    }
+    .report-body blockquote {
+      border-left: 3px solid #4f46e5;
+      padding-left: 1rem;
+      color: #6b7280;
+      margin: 0.75rem 0;
+    }
+    .report-body a { color: #4f46e5; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Research <span>Agent</span></h1>
+      <p class="subtitle">Enter a topic to get a synthesized research report from academic papers.</p>
+    </header>
+
+    <div class="card">
+      <form class="query-form" id="form">
+        <input type="text" id="query" placeholder="e.g. attention mechanisms in transformer models" autocomplete="off" />
+        <button type="submit" id="submit-btn">Run</button>
+      </form>
+    </div>
+
+    <div class="card hidden" id="progress-card">
+      <div class="section-label">
+        <span class="status-dot" id="status-dot"></span>
+        Progress
+      </div>
+      <div class="log" id="log"></div>
+      <div id="error-container"></div>
+    </div>
+
+    <div class="card hidden" id="report-card">
+      <div class="section-label">Report</div>
+      <div class="report-body" id="report"></div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const queryInput = document.getElementById('query');
+    const submitBtn = document.getElementById('submit-btn');
+    const progressCard = document.getElementById('progress-card');
+    const logEl = document.getElementById('log');
+    const errorContainer = document.getElementById('error-container');
+    const reportCard = document.getElementById('report-card');
+    const reportEl = document.getElementById('report');
+    const statusDot = document.getElementById('status-dot');
+
+    function appendLog(msg) {
+      const line = document.createElement('div');
+      line.textContent = msg;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function reset() {
+      logEl.innerHTML = '';
+      errorContainer.innerHTML = '';
+      reportEl.innerHTML = '';
+      reportCard.classList.add('hidden');
+      progressCard.classList.add('hidden');
+      statusDot.classList.remove('done');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = queryInput.value.trim();
+      if (!query) return;
+
+      reset();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Running…';
+      progressCard.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'log') {
+              appendLog(event.message);
+            } else if (event.type === 'report') {
+              reportEl.innerHTML = marked.parse(event.content);
+              reportCard.classList.remove('hidden');
+            } else if (event.type === 'error') {
+              const err = document.createElement('div');
+              err.className = 'error-msg';
+              err.textContent = event.message;
+              errorContainer.appendChild(err);
+            } else if (event.type === 'done') {
+              statusDot.classList.add('done');
+            }
+          }
+        }
+      } catch (err) {
+        appendLog(`Error: ${err.message}`);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run';
+      }
+    });
+  </script>
+</body>
+</html>

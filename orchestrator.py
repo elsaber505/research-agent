@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 
 from agents.decomposer import SubQuery, decompose
 from agents.discovery import Paper, discover, filter_papers
@@ -9,13 +10,15 @@ from config import READER_BATCH_SIZE
 _MAX_RETRIES = 2
 
 
-async def _discover_with_retry(sub_query: SubQuery, errors: list[str]) -> list[Paper]:
+async def _discover_with_retry(
+    sub_query: SubQuery, errors: list[str], log: Callable[[str], None]
+) -> list[Paper]:
     for attempt in range(_MAX_RETRIES + 1):
         try:
             return await discover(sub_query)
         except Exception as e:
             if attempt < _MAX_RETRIES:
-                print(f"  [retry {attempt + 1}/{_MAX_RETRIES}] discovery error: {e}", flush=True)
+                log(f"  [retry {attempt + 1}/{_MAX_RETRIES}] discovery error: {e}")
             else:
                 errors.append(f"Discovery failed for '{sub_query.query}': {e}")
                 return []
@@ -23,17 +26,16 @@ async def _discover_with_retry(sub_query: SubQuery, errors: list[str]) -> list[P
 
 
 async def _read_with_retry(
-    paper: Paper, query: str, errors: list[str]
+    paper: Paper, query: str, errors: list[str], log: Callable[[str], None]
 ) -> PaperSummary | None:
     for attempt in range(_MAX_RETRIES + 1):
         try:
             return await read_paper(paper, query)
         except Exception as e:
             if attempt < _MAX_RETRIES:
-                print(
+                log(
                     f"  [retry {attempt + 1}/{_MAX_RETRIES}] reader error for "
-                    f"'{paper.title[:60]}': {e}",
-                    flush=True,
+                    f"'{paper.title[:60]}': {e}"
                 )
             else:
                 errors.append(f"Reader failed for '{paper.title}': {e}")
@@ -41,67 +43,61 @@ async def _read_with_retry(
     return None
 
 
-async def run_pipeline(query: str) -> tuple[list[PaperSummary], str]:
+async def run_pipeline(
+    query: str, log: Callable[[str], None] = print
+) -> tuple[list[PaperSummary], str]:
     """Run the full research pipeline and return (summaries, report)."""
     errors: list[str] = []
 
     # Stage 1: Decompose
-    print("[Decomposer] Breaking query into sub-queries...", flush=True)
+    log("[Decomposer] Breaking query into sub-queries...")
     sub_queries = await decompose(query)
-    print(f"[Decomposer] Done — {len(sub_queries)} sub-queries:", flush=True)
+    log(f"[Decomposer] Done — {len(sub_queries)} sub-queries:")
     for sq in sorted(sub_queries, key=lambda s: int(s.priority)):
-        print(f"  [{sq.priority}] {sq.query}", flush=True)
+        log(f"  [{sq.priority}] {sq.query}")
 
     # Stage 2: Paper discovery -- sequential to respect API rate limits
-    print("\n[Discovery] Searching for papers...", flush=True)
+    log("\n[Discovery] Searching for papers...")
     paper_index: dict[str, Paper] = {}
     for i, sq in enumerate(sub_queries, start=1):
-        print(f"  ({i}/{len(sub_queries)}) {sq.query}", flush=True)
-        raw_papers = await _discover_with_retry(sq, errors)
+        log(f"  ({i}/{len(sub_queries)}) {sq.query}")
+        raw_papers = await _discover_with_retry(sq, errors, log)
         if not raw_papers:
-            print(f"    → No papers found", flush=True)
+            log(f"    → No papers found")
             continue
         filtered = await filter_papers(sq, raw_papers) if raw_papers else []
-        print(
-            f"    → {len(raw_papers)} found, {len(filtered)} kept after filtering",
-            flush=True,
-        )
+        log(f"    → {len(raw_papers)} found, {len(filtered)} kept after filtering")
         for p in filtered:
             paper_index[p.paper_id] = p
 
     all_papers = list(paper_index.values())
-    print(f"[Discovery] Done — {len(all_papers)} unique papers total\n", flush=True)
-
-    # DEBUG: Get human confirmation before reading
-    # if input("Proceed with reading? [y/N]: ").strip().lower() != "y":
-    #     return [], "Execution was stopped after discovery"
+    log(f"[Discovery] Done — {len(all_papers)} unique papers total\n")
 
     # Stage 3: Read papers in batches
     batch_size = READER_BATCH_SIZE or len(all_papers)
     batches = [all_papers[i:i + batch_size] for i in range(0, len(all_papers), batch_size)]
-    print(
+    log(
         f"[Reader] Reading {len(all_papers)} papers"
-        f" ({len(batches)} batch(es) of up to {batch_size})...",
-        flush=True,
+        f" ({len(batches)} batch(es) of up to {batch_size})..."
     )
     results: list[PaperSummary | None] = []
     for i, batch in enumerate(batches, start=1):
-        print(f"  Batch {i}/{len(batches)} ({len(batch)} papers)...", flush=True)
+        log(f"  Batch {i}/{len(batches)} ({len(batch)} papers)...")
         batch_results = await asyncio.gather(
-            *[_read_with_retry(p, query, errors) for p in batch]
+            *[_read_with_retry(p, query, errors, log) for p in batch]
         )
         results.extend(batch_results)
     summaries = [s for s in results if s is not None]
-    print(f"[Reader] Done — {len(summaries)}/{len(all_papers)} papers summarized\n", flush=True)
+    log(f"[Reader] Done — {len(summaries)}/{len(all_papers)} papers summarized\n")
 
     # Stage 4: Write report
-    print("[Writer] Synthesizing final report...", flush=True)
+    log("[Writer] Synthesizing final report...")
     report = await write_report(query, summaries)
-    print("[Writer] Done\n", flush=True)
+    log("[Writer] Done\n")
 
     if errors:
-        print(f"[Errors] {len(errors)} non-fatal error(s) during run:", flush=True)
+        log(f"[Errors] {len(errors)} non-fatal error(s) during run:")
         for err in errors:
-            print(f"  - {err}", flush=True)
+            log(f"  - {err}")
 
     return summaries, report

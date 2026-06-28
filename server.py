@@ -1,6 +1,5 @@
 import asyncio
 import json
-from contextlib import redirect_stdout
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -24,28 +23,12 @@ class RunRequest(BaseModel):
     query: str
 
 
-class _QueueWriter:
-    def __init__(self, queue: asyncio.Queue):
-        self._queue = queue
-
-    def write(self, text: str) -> int:
-        stripped = text.rstrip("\n")
-        if stripped:
-            self._queue.put_nowait(stripped)
-        return len(text)
-
-    def flush(self):
-        pass
-
-
 async def _stream_pipeline(query: str):
     queue: asyncio.Queue = asyncio.Queue()
-    writer = _QueueWriter(queue)
 
     async def _run():
         try:
-            with redirect_stdout(writer):
-                _, report = await run_pipeline(query)
+            _, report = await run_pipeline(query, log=queue.put_nowait)
             await queue.put({"type": "report", "content": report})
         except Exception as e:
             await queue.put({"type": "error", "message": str(e)})
